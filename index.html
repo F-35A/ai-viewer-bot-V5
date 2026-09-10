@@ -1,0 +1,1034 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 시청자봇 v5</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Noto+Sans+KR:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:#0a0a0f; --s1:#111118; --s2:#1a1a24; --bd:#252535;
+  --a:#00e5ff; --a2:#ff4fd8; --a3:#7fff00;
+  --tx:#e8e8f0; --dim:#5a5a7a; --red:#ff3b3b; --warn:#ffaa00;
+  --mono:'JetBrains Mono',monospace; --sans:'Noto Sans KR',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden}
+body{background:var(--bg);color:var(--tx);font-family:var(--sans);font-size:13px;display:flex;flex-direction:column}
+
+/* NAV */
+nav{height:46px;display:flex;align-items:center;padding:0 16px;gap:0;background:var(--s1);border-bottom:1px solid var(--bd);flex-shrink:0}
+.logo{font-family:var(--mono);font-weight:700;font-size:14px;color:var(--a);margin-right:18px}
+.logo span{color:var(--a2)}
+.logo small{font-size:10px;color:var(--dim);margin-left:4px}
+.tab{padding:0 15px;height:46px;display:flex;align-items:center;font-size:12px;color:var(--dim);cursor:pointer;border-bottom:2px solid transparent;transition:all .15s;gap:5px;user-select:none}
+.tab:hover{color:var(--tx)}.tab.on{color:var(--a);border-bottom-color:var(--a)}
+.nav-r{margin-left:auto;display:flex;align-items:center;gap:8px}
+.pill{display:none;align-items:center;gap:5px;font-family:var(--mono);font-size:10px;padding:3px 10px;border-radius:20px}
+.pill.show{display:flex}
+.pill-live{color:var(--red);background:rgba(255,59,59,.1);border:1px solid rgba(255,59,59,.25)}
+.pill-yt{color:var(--a3);background:rgba(127,255,0,.08);border:1px solid rgba(127,255,0,.2)}
+.dot{width:6px;height:6px;border-radius:50%;background:currentColor;animation:blink 1.2s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
+
+/* PAGES */
+.page{display:none;flex:1;overflow:hidden}
+.page.on{display:flex}
+
+/* ── 설정 ── */
+.cfg{flex-direction:column;overflow-y:auto;padding:20px;gap:16px}
+.cfg::-webkit-scrollbar{width:4px}
+.cfg::-webkit-scrollbar-thumb{background:var(--bd);border-radius:2px}
+.card{background:var(--s1);border:1px solid var(--bd);border-radius:10px;padding:18px}
+.ch{font-size:9px;font-family:var(--mono);color:var(--dim);letter-spacing:2px;text-transform:uppercase;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+.ch::after{content:'';flex:1;height:1px;background:var(--bd)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.f{display:flex;flex-direction:column;gap:5px}
+.f label{font-size:11px;color:var(--dim)}
+.f input,.f select,.f textarea{background:var(--s2);border:1px solid var(--bd);border-radius:6px;color:var(--tx);font-family:var(--mono);font-size:12px;padding:8px 11px;outline:none;transition:border-color .15s;width:100%}
+.f input:focus,.f select:focus{border-color:var(--a)}
+.f select option{background:var(--s2)}
+.f textarea{resize:vertical;min-height:52px;font-family:var(--sans);font-size:12px;line-height:1.6}
+.hint{font-size:10px;color:var(--dim);margin-top:2px}
+.hint a{color:var(--a);text-decoration:none}
+.hint a:hover{text-decoration:underline}
+
+/* 토글 */
+.sw-row{display:flex;align-items:center;justify-content:space-between;padding:5px 0}
+.sw-info .sl{font-size:13px}
+.sw-info .ss{font-size:10px;color:var(--dim);margin-top:1px}
+.sw{position:relative;width:38px;height:22px;flex-shrink:0}
+.sw input{opacity:0;width:0;height:0}
+.sw-t{position:absolute;inset:0;background:var(--bd);border-radius:22px;cursor:pointer;transition:background .2s}
+.sw input:checked+.sw-t{background:var(--a)}
+.sw-t::after{content:'';position:absolute;top:4px;left:4px;width:14px;height:14px;border-radius:50%;background:#fff;transition:transform .2s}
+.sw input:checked+.sw-t::after{transform:translateX(16px)}
+
+/* 버튼 */
+.btn{display:flex;align-items:center;justify-content:center;gap:7px;padding:10px 18px;border-radius:7px;border:none;font-family:var(--sans);font-weight:700;font-size:13px;cursor:pointer;transition:all .18s;white-space:nowrap}
+.btn:disabled{opacity:.35;cursor:not-allowed;transform:none!important;filter:none!important}
+.btn-a{background:var(--a);color:#000}.btn-a:not(:disabled):hover{filter:brightness(1.15);transform:translateY(-1px)}
+.btn-o{background:transparent;color:var(--a);border:1px solid var(--a)}.btn-o:not(:disabled):hover{background:rgba(0,229,255,.08)}
+.btn-g{background:rgba(127,255,0,.1);color:var(--a3);border:1px solid rgba(127,255,0,.2)}.btn-g:not(:disabled):hover{background:rgba(127,255,0,.18)}
+.btn-row{display:flex;gap:8px;margin-top:8px}
+.fw{width:100%}
+
+/* OAuth 상태 */
+.ost{display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:8px;background:var(--s2);border:1px solid var(--bd);margin-bottom:12px}
+.ost-dot{width:8px;height:8px;border-radius:50%;background:var(--dim);flex-shrink:0;transition:all .3s}
+.ost-dot.ok{background:var(--a3);box-shadow:0 0 6px var(--a3)}
+.ost-dot.spin{background:var(--warn);animation:blink .8s infinite}
+.ost-tx{font-size:12px;font-weight:700}
+.ost-sub{font-size:10px;color:var(--dim);margin-top:2px}
+
+/* 봇 카드 */
+.bc{background:var(--s2);border:1px solid var(--bd);border-radius:8px;padding:12px}
+.bc-hd{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.bc-num{font-family:var(--mono);font-size:10px;color:var(--dim);background:var(--bg);padding:2px 7px;border-radius:4px}
+.bc-name{font-weight:700;font-size:13px}
+.bc-grid{display:grid;grid-template-columns:1fr 42px 1fr;gap:8px}
+
+/* ── 봇 실행 ── */
+.run{gap:0}
+.run-l{width:255px;flex-shrink:0;display:flex;flex-direction:column;background:var(--s1);border-right:1px solid var(--bd);overflow-y:auto;padding:14px;gap:14px}
+.run-l::-webkit-scrollbar{width:3px}
+.run-l::-webkit-scrollbar-thumb{background:var(--bd);border-radius:2px}
+.sh{font-family:var(--mono);font-size:9px;color:var(--dim);letter-spacing:2px;text-transform:uppercase;margin-bottom:8px}
+.sg{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.sb{background:var(--s2);border:1px solid var(--bd);border-radius:6px;padding:9px 8px;text-align:center}
+.sn{font-family:var(--mono);font-size:20px;font-weight:700;color:var(--a);line-height:1}
+.sl{font-size:10px;color:var(--dim);margin-top:3px}
+.ctrl{display:flex;align-items:center;justify-content:center;gap:8px;padding:12px;border-radius:8px;border:none;font-family:var(--sans);font-weight:900;font-size:15px;cursor:pointer;transition:all .2s;width:100%}
+.ctrl-s{background:var(--a);color:#000}
+.ctrl-s:not(:disabled):hover{filter:brightness(1.2);transform:translateY(-1px);box-shadow:0 4px 20px rgba(0,229,255,.3)}
+.ctrl-x{background:rgba(255,59,59,.12);color:var(--red);border:1px solid rgba(255,59,59,.3)}
+.ctrl-x:not(:disabled):hover{background:rgba(255,59,59,.22)}
+.ctrl:disabled{opacity:.35;cursor:not-allowed;transform:none}
+
+/* 봇 상태 카드 */
+.bst{display:flex;align-items:center;gap:7px;padding:7px 10px;background:var(--s2);border:1px solid var(--bd);border-radius:6px;margin-bottom:5px;transition:border-color .2s}
+.bst.active{border-color:rgba(0,229,255,.3)}
+.bst-av{width:26px;height:26px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700}
+.bst-name{font-size:11px;font-weight:700;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bst-st{font-size:9px;font-family:var(--mono);padding:1px 6px;border-radius:3px;flex-shrink:0}
+.st-ok{background:rgba(127,255,0,.1);color:var(--a3)}
+.st-think{background:rgba(255,170,0,.1);color:var(--warn)}
+.st-wait{background:rgba(0,229,255,.06);color:var(--a)}
+.st-idle{color:var(--dim)}
+.bst-cd{font-family:var(--mono);font-size:9px;color:var(--dim);min-width:22px;text-align:right;flex-shrink:0}
+
+/* 우측 */
+.run-r{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.prev{flex-shrink:0;height:185px;background:#000;position:relative;border-bottom:1px solid var(--bd);overflow:hidden}
+.prev img{width:100%;height:100%;object-fit:contain;display:none}
+.prev-empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px}
+.pei{font-size:32px;opacity:.2}
+.pet{font-size:11px;color:var(--dim)}
+.plbl{position:absolute;top:8px;left:8px;font-family:var(--mono);font-size:9px;background:rgba(0,0,0,.8);color:var(--dim);padding:3px 8px;border-radius:4px;letter-spacing:1px}
+.plbl.act{color:var(--a)}
+.gbadge{position:absolute;top:8px;right:8px;font-family:var(--mono);font-size:9px;background:rgba(255,79,216,.12);color:var(--a2);border:1px solid rgba(255,79,216,.2);padding:3px 8px;border-radius:4px;display:none}
+.tbar{height:3px;background:var(--bd);flex-shrink:0;overflow:hidden;position:relative}
+.tfill{position:absolute;left:0;top:0;bottom:0;background:linear-gradient(90deg,var(--a),var(--a2));width:0%}
+.scene-bar{flex-shrink:0;padding:7px 14px;background:var(--s1);border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:10px;min-height:34px}
+.sl-lbl{font-family:var(--mono);font-size:9px;color:var(--dim);letter-spacing:1.5px;text-transform:uppercase;flex-shrink:0}
+.sl-tx{flex:1;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mood{font-size:10px;font-family:var(--mono);padding:2px 9px;border-radius:20px;flex-shrink:0}
+.m-hype{background:rgba(255,79,216,.12);color:var(--a2);border:1px solid rgba(255,79,216,.25)}
+.m-calm{background:rgba(0,229,255,.08);color:var(--a);border:1px solid rgba(0,229,255,.18)}
+.m-tense{background:rgba(255,170,0,.1);color:var(--warn);border:1px solid rgba(255,170,0,.25)}
+.log{flex:1;overflow-y:auto;padding:10px 14px;display:flex;flex-direction:column;gap:5px}
+.log::-webkit-scrollbar{width:4px}
+.log::-webkit-scrollbar-thumb{background:var(--bd);border-radius:2px}
+.msg{display:flex;gap:9px;animation:fu .25s ease}
+@keyframes fu{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.av{width:28px;height:28px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700}
+.mb{flex:1;min-width:0}
+.mh{display:flex;align-items:baseline;gap:6px;margin-bottom:2px}
+.mn{font-size:12px;font-weight:700}
+.mt{font-size:9px;color:var(--dim);font-family:var(--mono)}
+.mk{font-size:9px;padding:1px 6px;border-radius:3px;font-family:var(--mono)}
+.k-bot{background:rgba(255,79,216,.1);color:var(--a2)}
+.k-man{background:rgba(255,170,0,.1);color:var(--warn)}
+.k-yt{background:rgba(127,255,0,.08);color:var(--a3)}
+.mtx{font-size:12px;line-height:1.55;word-break:break-all;-webkit-user-select:text;user-select:text}
+.sysd{display:flex;align-items:center;gap:8px;padding:3px 0}
+.syl{flex:1;height:1px;background:var(--bd)}
+.syt{font-size:10px;color:var(--dim);font-family:var(--mono);white-space:nowrap}
+.cin{flex-shrink:0;padding:10px 14px;background:var(--s1);border-top:1px solid var(--bd);display:flex;gap:8px}
+.cin input{flex:1;background:var(--s2);border:1px solid var(--bd);border-radius:6px;color:var(--tx);font-family:var(--sans);font-size:12px;padding:8px 12px;outline:none;-webkit-user-select:text;user-select:text}
+.cin input:focus{border-color:var(--a)}
+.cin button{background:var(--a);color:#000;border:none;border-radius:6px;padding:8px 14px;font-weight:700;font-size:12px;cursor:pointer;font-family:var(--sans);transition:filter .15s}
+.cin button:hover{filter:brightness(1.1)}
+
+/* 토스트 */
+.tw{position:fixed;bottom:20px;right:20px;display:flex;flex-direction:column;gap:8px;z-index:9999;pointer-events:none}
+.toast{padding:10px 16px;border-radius:8px;font-size:12px;animation:ti .25s ease;max-width:320px;line-height:1.4}
+@keyframes ti{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+.t-ok{background:rgba(127,255,0,.15);border:1px solid rgba(127,255,0,.3);color:var(--a3)}
+.t-err{background:rgba(255,59,59,.15);border:1px solid rgba(255,59,59,.3);color:var(--red)}
+.t-info{background:rgba(0,229,255,.1);border:1px solid rgba(0,229,255,.2);color:var(--a)}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="logo">AI<span>봇</span><small>v5</small></div>
+  <div class="tab on" data-p="cfg" onclick="goTab(this)">⚙️ 설정</div>
+  <div class="tab" data-p="run" onclick="goTab(this)">🤖 봇 실행</div>
+  <div class="nav-r">
+    <div class="pill pill-yt" id="pillYT"><div class="dot"></div>YT 연결됨</div>
+    <div class="pill pill-live" id="pillLive"><div class="dot"></div>라이브</div>
+  </div>
+</nav>
+
+<!-- ══ 설정 ══ -->
+<div class="page cfg on" id="p-cfg">
+
+  <!-- YouTube OAuth -->
+  <div class="card">
+    <div class="ch">📺 YouTube 로그인</div>
+    <div class="ost">
+      <div class="ost-dot" id="ostDot"></div>
+      <div>
+        <div class="ost-tx" id="ostTx">로그인 안 됨</div>
+        <div class="ost-sub" id="ostSub">Google 계정으로 YouTube 채팅 권한 연동</div>
+      </div>
+    </div>
+    <div class="grid2" style="margin-bottom:10px">
+      <div class="f">
+        <label>OAuth 클라이언트 ID</label>
+        <input type="text" id="clientId" placeholder="xxxx.apps.googleusercontent.com">
+        <div class="hint">
+          <a href="https://console.cloud.google.com" target="_blank">Google Cloud Console</a>
+          → 사용자 인증정보 → OAuth 2.0 → 웹 애플리케이션
+        </div>
+      </div>
+      <div class="f">
+        <label>OAuth 클라이언트 시크릿</label>
+        <input type="password" id="clientSecret" placeholder="GOCSPX-...">
+        <div class="hint">리디렉션 URI: 이 페이지 주소 + /api/oauth-callback</div>
+      </div>
+    </div>
+    <div class="grid2" style="margin-bottom:10px">
+      <div class="f">
+        <label>YouTube 영상 ID</label>
+        <input type="text" id="videoId" placeholder="dQw4w9WgXcQ">
+        <div class="hint">라이브 URL의 ?v= 뒤 값</div>
+      </div>
+      <div class="f">
+        <label>Live Chat ID</label>
+        <input type="text" id="liveChatId" placeholder="자동 조회 또는 직접 입력">
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-g" id="loginBtn" onclick="doLogin()" style="flex:1">🔑 Google 로그인</button>
+      <button class="btn btn-o" onclick="fetchChatId()" style="flex:1">🔍 Chat ID 자동 조회</button>
+    </div>
+  </div>
+
+  <!-- Groq -->
+  <div class="card">
+    <div class="ch">⚡ Groq API (무료)</div>
+    <div class="grid2">
+      <div class="f">
+        <label>Groq API Key</label>
+        <input type="password" id="groqKey" placeholder="gsk_...">
+        <div class="hint"><a href="https://console.groq.com" target="_blank">console.groq.com</a> → API Keys → 무료 발급</div>
+      </div>
+      <div class="f">
+        <label>Vision 모델</label>
+        <select id="groqModel">
+          <option value="meta-llama/llama-4-scout-17b-16e-instruct">Llama 4 Scout ✅ 추천</option>
+          <option value="llama-3.2-90b-vision-preview">Llama 3.2 90B Vision</option>
+          <option value="llama-3.2-11b-vision-preview">Llama 3.2 11B (더 빠름)</option>
+        </select>
+        <div class="hint">무료 · RPM 30 · RPD 14,400</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 봇 4명 -->
+  <div class="card">
+    <div class="ch">🎭 AI 시청자 4명</div>
+    <div style="display:flex;flex-direction:column;gap:10px" id="botCards"></div>
+  </div>
+
+  <!-- 동작 -->
+  <div class="card">
+    <div class="ch">⚙️ 동작 설정</div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <div class="sw-row">
+        <div class="sw-info">
+          <div class="sl">YouTube 채팅 실제 전송</div>
+          <div class="ss">OFF = 앱 내 로그만 표시 (테스트 모드)</div>
+        </div>
+        <label class="sw"><input type="checkbox" id="swYT"><div class="sw-t"></div></label>
+      </div>
+      <div class="sw-row">
+        <div class="sw-info">
+          <div class="sl">YouTube 채팅 읽기</div>
+          <div class="ss">실시간 시청자 채팅을 봇 컨텍스트에 반영</div>
+        </div>
+        <label class="sw"><input type="checkbox" id="swRead" checked><div class="sw-t"></div></label>
+      </div>
+    </div>
+  </div>
+
+  <div class="btn-row">
+    <button class="btn btn-a fw" onclick="saveCfg()">💾 설정 저장</button>
+  </div>
+</div>
+
+<!-- ══ 봇 실행 ══ -->
+<div class="page run" id="p-run">
+  <div class="run-l">
+
+    <div>
+      <div class="sh">🤖 봇 상태</div>
+      <div id="botStatus"></div>
+    </div>
+
+    <div style="border-top:1px solid var(--bd);padding-top:14px">
+      <div class="sh">📊 통계</div>
+      <div class="sg">
+        <div class="sb"><div class="sn" id="stC">0</div><div class="sl">채팅 전송</div></div>
+        <div class="sb"><div class="sn" id="stA">0</div><div class="sl">AI 분석</div></div>
+        <div class="sb"><div class="sn" id="stS">0</div><div class="sl">스킵</div></div>
+        <div class="sb"><div class="sn" id="stU">0m</div><div class="sl">운영 시간</div></div>
+      </div>
+    </div>
+
+    <div style="border-top:1px solid var(--bd);padding-top:14px">
+      <div class="sh">🖥️ 캡처 소스</div>
+      <div class="f" style="margin-bottom:8px">
+        <select id="srcSel" style="font-size:11px"><option>아래 버튼으로 선택하세요</option></select>
+      </div>
+      <button class="btn btn-o fw" style="font-size:11px;padding:7px" onclick="pickSource()">🖥️ 화면 선택</button>
+    </div>
+
+    <div style="border-top:1px solid var(--bd);padding-top:14px;margin-top:auto;display:flex;flex-direction:column;gap:8px">
+      <button class="ctrl ctrl-s" id="startBtn" onclick="startBot()">▶ 봇 시작</button>
+      <button class="ctrl ctrl-x" id="stopBtn" onclick="stopBot()" disabled>■ 봇 정지</button>
+    </div>
+  </div>
+
+  <div class="run-r">
+    <div class="prev">
+      <img id="prevImg">
+      <div class="prev-empty" id="prevEmpty">
+        <div class="pei">🎬</div>
+        <div class="pet">봇 시작 후 화면이 표시됩니다</div>
+      </div>
+      <div class="plbl" id="plbl">대기중</div>
+      <div class="gbadge" id="gbadge">⚡ GROQ · LLAMA 4</div>
+    </div>
+    <div class="tbar"><div class="tfill" id="tfill"></div></div>
+    <div class="scene-bar">
+      <div class="sl-lbl">SCENE</div>
+      <div class="sl-tx" id="sceneTx">분석 대기중...</div>
+      <div class="mood m-calm" id="moodChip">--</div>
+    </div>
+    <div class="log" id="log">
+      <div class="sysd"><div class="syl"></div><div class="syt">채팅 로그</div><div class="syl"></div></div>
+    </div>
+    <div class="cin">
+      <input type="text" id="manIn" placeholder="수동 채팅 입력 (Enter로 전송)..." onkeydown="if(event.key==='Enter')sendManual()">
+      <button onclick="sendManual()">전송</button>
+    </div>
+  </div>
+</div>
+
+<div class="tw" id="tw"></div>
+
+<script>
+// ═══════════════════════════════════════════
+//  봇 기본 정의
+// ═══════════════════════════════════════════
+const BOTS_DEFAULT = [
+  { name:'하입킹',    color:'#ff4fd8', persona:'hype'  },
+  { name:'쿨가이',    color:'#00e5ff', persona:'chill' },
+  { name:'개그맨',    color:'#ffaa00', persona:'funny' },
+  { name:'프로게이머', color:'#7fff00', persona:'pro'   },
+];
+
+const PERSONA = {
+  hype:`[성격] 흥분 잘 하는 20대 게임 시청자. 텐션 높고 직관적.
+[말투] "ㅋㅋㅋㅋ" "실화냐" "ㄷㄷ" "미쳤다" "ㅋㅋ 뭐야" 존댓말 없음.
+[반응] 화면에서 구체적인 걸 짚어서 말함. 예: "저 체력 봐 ㅋㅋ" "아 왜 저기 들어가냐"`,
+  chill:`[성격] 게임 많이 본 쿨한 시청자. 별로 안 놀라고 짧게 던짐.
+[말투] "오" "ㅇㅇ" "알만하네" "역시" "저건 좀 애매한 듯" 건조한 톤.
+[반응] 화면에서 본 걸 짧게 짚음. 예: "저 각은 아닌 것 같은데" "bgm 뭐임"`,
+  funny:`[성격] 항상 드립 노리는 개그형. 상황을 비틀거나 엉뚱하게 해석.
+[말투] "ㅋㅋㅋㅋㅋ" "이게 뭐임" "아 진짜요?" 밈 활용.
+[반응] 엉뚱한 걸 캐치하거나 타이밍 드립.`,
+  pro:`[성격] 게임 오래 한 분석형. 판단 빠르고 구체적으로 짚음.
+[말투] 짧고 단정적. "저 판단 틀렸음" "이 루트가 맞음" "타이밍 늦음".
+[반응] 전략/판단/실수를 구체적으로 짚음.`,
+  shy:`[성격] 소심하고 눈치 보는 시청자.
+[말투] "...ㅎㅎ" "저는 잘 모르지만" "뭔가 무서운 느낌..?" 애매하게.
+[반응] 화면 본 걸 조심스럽게 언급.`,
+  custom:'',
+};
+
+// ═══════════════════════════════════════════
+//  전역 상태
+// ═══════════════════════════════════════════
+const S = {
+  running: false,
+  stream:  null,
+  bots:    [],
+  timers:  [],
+  upTimer: null,
+  pollTimer: null,
+  stats:   { c:0, a:0, s:0, start:0 },
+  token:   '',
+  loggedIn: false,
+  liveChatId: '',
+  recentChats: [],
+  seenIds: new Set(),
+  ytNextPage: '',
+};
+
+// ═══════════════════════════════════════════
+//  초기화
+// ═══════════════════════════════════════════
+window.addEventListener('DOMContentLoaded', () => {
+  renderBotCards();
+  loadCfg();
+  renderBotStatus();
+
+  // OAuth postMessage 수신
+  window.addEventListener('message', e => {
+    if (!e.data || e.data.type !== 'oauth-token') return;
+    S.token = e.data.accessToken;
+    if (e.data.refreshToken) {
+      const cfg = getCfg();
+      cfg.refreshToken = e.data.refreshToken;
+      localStorage.setItem('aibotcfg', JSON.stringify(cfg));
+    }
+    setLoginOk();
+    toast('✅ 로그인 성공!', 'ok');
+  });
+});
+
+// ═══════════════════════════════════════════
+//  탭
+// ═══════════════════════════════════════════
+function goTab(el) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('on'));
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('on'));
+  el.classList.add('on');
+  g('p-' + el.dataset.p).classList.add('on');
+  if (el.dataset.p === 'run') renderBotStatus();
+}
+
+// ═══════════════════════════════════════════
+//  봇 카드 렌더링 (설정 탭)
+// ═══════════════════════════════════════════
+function renderBotCards() {
+  const c = g('botCards');
+  c.innerHTML = '';
+  BOTS_DEFAULT.forEach((bot, i) => {
+    c.innerHTML += `
+    <div class="bc">
+      <div class="bc-hd">
+        <div class="bc-num">봇 ${i+1}</div>
+        <div class="bc-name" id="bpv${i}" style="color:${bot.color}">${bot.name}</div>
+      </div>
+      <div class="bc-grid">
+        <div class="f">
+          <label>이름</label>
+          <input type="text" id="bn${i}" value="${bot.name}" oninput="g('bpv${i}').textContent=this.value">
+        </div>
+        <div class="f">
+          <label>색상</label>
+          <input type="color" id="bc${i}" value="${bot.color}" style="height:38px;cursor:pointer;padding:2px">
+        </div>
+        <div class="f">
+          <label>성격</label>
+          <select id="bp${i}" onchange="onBP(${i})">
+            <option value="hype"  ${bot.persona==='hype' ?'selected':''}>하입맨 🔥</option>
+            <option value="chill" ${bot.persona==='chill'?'selected':''}>쿨가이 😎</option>
+            <option value="funny" ${bot.persona==='funny'?'selected':''}>개그캐 😂</option>
+            <option value="pro"   ${bot.persona==='pro'  ?'selected':''}>분석형 🎮</option>
+            <option value="shy"   ${bot.persona==='shy'  ?'selected':''}>수줍 🥺</option>
+            <option value="custom">커스텀 ✏️</option>
+          </select>
+        </div>
+      </div>
+      <div class="f" id="bcf${i}" style="margin-top:8px;display:none">
+        <label>커스텀 성격</label>
+        <textarea id="bcp${i}" placeholder="이 봇의 성격을 자유롭게 설명..."></textarea>
+      </div>
+    </div>`;
+  });
+}
+
+function onBP(i) {
+  g(`bcf${i}`).style.display = g(`bp${i}`).value === 'custom' ? 'flex' : 'none';
+}
+
+function getBotCfgs() {
+  return BOTS_DEFAULT.map((def, i) => ({
+    name:    g(`bn${i}`)?.value.trim()  || def.name,
+    color:   g(`bc${i}`)?.value        || def.color,
+    persona: g(`bp${i}`)?.value        || def.persona,
+    customP: g(`bcp${i}`)?.value.trim()|| '',
+  }));
+}
+
+// ═══════════════════════════════════════════
+//  봇 상태 패널 (실행 탭)
+// ═══════════════════════════════════════════
+function renderBotStatus() {
+  const c = g('botStatus');
+  if (!c) return;
+  const bots = S.running ? S.bots : getBotCfgs();
+  c.innerHTML = bots.map((bot, i) => {
+    const state = S.running ? (S.bots[i]?.state || 'idle') : 'idle';
+    return `<div class="bst" id="bst${i}">
+      <div class="bst-av" style="background:${bot.color}22;color:${bot.color}">${(bot.name||'봇')[0]}</div>
+      <div class="bst-name" style="color:${bot.color}">${esc(bot.name)}</div>
+      <div class="bst-st ${stCls(state)}" id="bss${i}">${stLbl(state)}</div>
+      <div class="bst-cd" id="bsc${i}">--</div>
+    </div>`;
+  }).join('');
+}
+
+function stCls(s) { return s==='ok'?'st-ok':s==='think'?'st-think':s==='wait'?'st-wait':'st-idle'; }
+function stLbl(s) { return s==='ok'?'💬 채팅':s==='think'?'🤔 분석중':s==='wait'?'⏳ 대기':'😴 대기'; }
+
+function setBotSt(i, state, cd) {
+  const s = g(`bss${i}`), c = g(`bsc${i}`), el = g(`bst${i}`);
+  if (s) { s.className = `bst-st ${stCls(state)}`; s.textContent = stLbl(state); }
+  if (c) c.textContent = cd != null ? cd + 's' : '--';
+  if (el) el.classList.toggle('active', state === 'ok' || state === 'think');
+}
+
+// ═══════════════════════════════════════════
+//  설정 저장 / 로드
+// ═══════════════════════════════════════════
+function getCfg() {
+  try { return JSON.parse(localStorage.getItem('aibotcfg') || '{}'); } catch { return {}; }
+}
+
+function saveCfg() {
+  const d = {
+    clientId:     g('clientId').value.trim(),
+    clientSecret: g('clientSecret').value.trim(),
+    videoId:      g('videoId').value.trim(),
+    liveChatId:   g('liveChatId').value.trim(),
+    groqKey:      g('groqKey').value.trim(),
+    groqModel:    g('groqModel').value,
+    swYT:         g('swYT').checked,
+    swRead:       g('swRead').checked,
+    bots:         getBotCfgs(),
+  };
+  const existing = getCfg();
+  localStorage.setItem('aibotcfg', JSON.stringify({ ...existing, ...d }));
+  toast('✅ 설정 저장됨', 'ok');
+}
+
+function loadCfg() {
+  const c = getCfg();
+  const set = (id, val) => { const el = g(id); if (el && val != null) el.value = val; };
+  set('clientId',     c.clientId);
+  set('clientSecret', c.clientSecret);
+  set('videoId',      c.videoId);
+  set('liveChatId',   c.liveChatId);
+  set('groqKey',      c.groqKey);
+  set('groqModel',    c.groqModel);
+  if (c.swYT  != null) g('swYT').checked  = c.swYT;
+  if (c.swRead != null) g('swRead').checked = c.swRead;
+  if (c.liveChatId) S.liveChatId = c.liveChatId;
+  if (c.bots) {
+    c.bots.forEach((bot, i) => {
+      set(`bn${i}`, bot.name);
+      set(`bc${i}`, bot.color);
+      if (g(`bp${i}`)) { g(`bp${i}`).value = bot.persona; onBP(i); }
+      set(`bcp${i}`, bot.customP);
+      const pv = g(`bpv${i}`);
+      if (pv) { pv.textContent = bot.name; pv.style.color = bot.color; }
+    });
+  }
+  // 저장된 refreshToken으로 자동 로그인
+  if (c.refreshToken && c.clientId && c.clientSecret) {
+    autoRefresh(c);
+  }
+}
+
+async function autoRefresh(c) {
+  try {
+    const r = await fetch('/api/refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        refreshToken:  c.refreshToken,
+        clientId:      c.clientId,
+        clientSecret:  c.clientSecret,
+      }),
+    }).then(r => r.json());
+    if (r.success) {
+      S.token = r.accessToken;
+      setLoginOk();
+      // 55분마다 자동 갱신
+      setInterval(async () => {
+        const cfg = getCfg();
+        const res = await fetch('/api/refresh', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            refreshToken: cfg.refreshToken,
+            clientId:     cfg.clientId,
+            clientSecret: cfg.clientSecret,
+          }),
+        }).then(r => r.json());
+        if (res.success) S.token = res.accessToken;
+      }, 55 * 60 * 1000);
+    }
+  } catch {}
+}
+
+// ═══════════════════════════════════════════
+//  OAuth 로그인
+// ═══════════════════════════════════════════
+async function doLogin() {
+  const clientId     = g('clientId').value.trim();
+  const clientSecret = g('clientSecret').value.trim();
+
+  if (!clientId)     { toast('클라이언트 ID를 입력하세요', 'err'); return; }
+  if (!clientSecret) { toast('클라이언트 시크릿을 입력하세요', 'err'); return; }
+
+  const btn = g('loginBtn');
+  btn.disabled = true;
+  btn.textContent = '처리 중...';
+  g('ostDot').className = 'ost-dot spin';
+  g('ostTx').textContent = '로그인 창 열리는 중...';
+
+  try {
+    const resp = await fetch('/api/oauth-start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clientId, clientSecret }),
+    });
+
+    if (!resp.ok) throw new Error(`서버 응답 오류: HTTP ${resp.status}`);
+
+    const r = await resp.json();
+    if (!r.success) throw new Error(r.error || '알 수 없는 오류');
+
+    // 팝업으로 열기
+    const popup = window.open(r.authUrl, 'oauth_login', 'width=520,height=660,left=200,top=100');
+    if (!popup) {
+      throw new Error('팝업이 차단됐습니다. 브라우저 주소창 옆 팝업 허용 후 다시 시도하세요');
+    }
+    g('ostSub').textContent = '열린 창에서 Google 계정을 선택해주세요...';
+    toast('✅ 로그인 창 열림!', 'info');
+  } catch(e) {
+    toast('로그인 오류: ' + e.message, 'err');
+    setLoginFail();
+  }
+
+  btn.disabled = false;
+  btn.textContent = '🔑 Google 로그인';
+}
+
+function setLoginOk() {
+  S.loggedIn = true;
+  g('ostDot').className = 'ost-dot ok';
+  g('ostTx').textContent = '로그인됨 ✅';
+  g('ostSub').textContent = 'YouTube 채팅 전송 준비 완료';
+  g('pillYT').classList.add('show');
+}
+
+function setLoginFail(msg) {
+  S.loggedIn = false;
+  g('ostDot').className = 'ost-dot';
+  g('ostTx').textContent = '로그인 안 됨';
+  g('ostSub').textContent = msg || 'Google 계정으로 YouTube 채팅 권한 연동';
+  g('pillYT').classList.remove('show');
+}
+
+// ═══════════════════════════════════════════
+//  Chat ID 조회
+// ═══════════════════════════════════════════
+async function fetchChatId() {
+  const vid = g('videoId').value.trim();
+  if (!vid) { toast('영상 ID를 먼저 입력하세요', 'err'); return; }
+  if (!S.token) { toast('먼저 Google 로그인을 해주세요', 'err'); return; }
+  try {
+    const r = await fetch(`/api/youtube?action=livechat-id&videoId=${encodeURIComponent(vid)}`, {
+      headers: { 'Authorization': 'Bearer ' + S.token },
+    }).then(r => r.json());
+    if (r.success) {
+      g('liveChatId').value = r.chatId;
+      S.liveChatId = r.chatId;
+      saveCfg();
+      toast('✅ Chat ID 조회 성공', 'ok');
+    } else {
+      toast('조회 실패: ' + r.error, 'err');
+    }
+  } catch(e) {
+    toast('네트워크 오류: ' + e.message, 'err');
+  }
+}
+
+// ═══════════════════════════════════════════
+//  화면 선택
+// ═══════════════════════════════════════════
+async function pickSource() {
+  try {
+    if (S.stream) { S.stream.getTracks().forEach(t => t.stop()); S.stream = null; }
+    S.stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 5 }, audio: false });
+    const label = S.stream.getVideoTracks()[0].label || '선택된 화면';
+    g('srcSel').innerHTML = `<option>✅ ${esc(label)}</option>`;
+    S.stream.getVideoTracks()[0].addEventListener('ended', () => {
+      S.stream = null;
+      if (S.running) stopBot();
+    });
+    toast('화면 소스 선택됨', 'ok');
+  } catch(e) {
+    if (e.name !== 'NotAllowedError') toast('화면 선택 오류: ' + e.message, 'err');
+  }
+}
+
+// ═══════════════════════════════════════════
+//  캡처
+// ═══════════════════════════════════════════
+async function captureFrame() {
+  if (!S.stream) return null;
+  const track = S.stream.getVideoTracks()[0];
+  if (track.readyState === 'ended') return null;
+  try {
+    const bmp = await new ImageCapture(track).grabFrame();
+    const cv = document.createElement('canvas');
+    cv.width = 1280; cv.height = 720;
+    cv.getContext('2d').drawImage(bmp, 0, 0, 1280, 720);
+    const url = cv.toDataURL('image/jpeg', 0.65);
+    g('prevImg').src = url;
+    g('prevImg').style.display = 'block';
+    g('prevEmpty').style.display = 'none';
+    return url;
+  } catch { return null; }
+}
+
+// ═══════════════════════════════════════════
+//  Groq Vision 분석
+// ═══════════════════════════════════════════
+async function analyzeForBot(imgData, bot) {
+  const key   = g('groqKey').value.trim();
+  const model = g('groqModel').value;
+  if (!key) return null;
+
+  const personaTxt  = bot.persona === 'custom' ? bot.customP : PERSONA[bot.persona] || '';
+  const chatHistory = S.recentChats.slice(-8).map(c => `${c.name}: ${c.msg}`).join('\n') || '(없음)';
+  const myLast      = bot.lastChat || '(없음)';
+
+  const system = `너는 "${bot.name}"라는 유튜브 라이브 시청자야.
+
+${personaTxt}
+
+== 현재 채팅창 ==
+${chatHistory}
+
+== 내 직전 발언 ==
+${myLast}
+
+== 반응 규칙 ==
+1. 화면에서 구체적인 것(텍스트, 캐릭터, UI, 상황)을 직접 짚어서 말해.
+2. 직전 발언(${myLast})과 비슷한 말 절대 반복 금지.
+3. 다른 시청자가 비슷한 말 했으면 다른 각도로.
+4. 주제나 맥락 모르겠으면 react=false로 스킵 (억지 반응 금지).
+5. 완전 정적 화면(검은화면/로딩)도 react=false.
+6. "재밌네" "시작됐네" 같은 generic 반응 절대 금지.
+7. 내 말투로 짧고 자연스럽게.
+
+== 출력 형식 (JSON만, 다른 텍스트 없음) ==
+{"think":"뭘 봤고 왜 이 말인지 1줄","react":true/false,"scene":"20자 이내","mood":"hype|calm|tense","chat":"10~25자 (react=false면 빈문자열)"}`;
+
+  try {
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + key,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: [
+            { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${imgData.split(',')[1]}` } },
+            { type: 'text', text: '화면 보고 JSON만 반환.' },
+          ]},
+        ],
+        max_tokens: 150,
+        temperature: 0.92,
+        response_format: { type: 'json_object' },
+      }),
+    });
+
+    if (res.status === 429) return null; // 속도 제한 → 조용히 스킵
+
+    const data = await res.json();
+    if (!res.ok) {
+      console.warn(`[${bot.name}] Groq 오류:`, data.error?.message);
+      return null;
+    }
+
+    const raw = data.choices?.[0]?.message?.content || '{}';
+    return JSON.parse(raw);
+  } catch(e) {
+    console.warn(`[${bot.name}] 분석 오류:`, e.message);
+    return null;
+  }
+}
+
+// ═══════════════════════════════════════════
+//  봇 루프 (각자 독립)
+// ═══════════════════════════════════════════
+async function botLoop(i) {
+  if (!S.running) return;
+  const bot = S.bots[i];
+
+  // 랜덤 생각 유예 1~2.5초
+  await sleep(rand(800, 2500));
+  if (!S.running) return;
+
+  setBotSt(i, 'think', null);
+  bot.state = 'think';
+
+  const img = await captureFrame();
+  if (!img) { schedule(i, 6000); return; }
+
+  animTimer();
+  S.stats.a++;
+  const r = await analyzeForBot(img, bot);
+  updStats();
+
+  if (r) {
+    g('sceneTx').textContent = r.scene || '--';
+    const chip = g('moodChip');
+    chip.className = 'mood ' + (r.mood==='hype' ? 'm-hype' : r.mood==='tense' ? 'm-tense' : 'm-calm');
+    chip.textContent = r.mood==='hype' ? '🔥 하입' : r.mood==='tense' ? '⚡ 긴장' : '😎 안정';
+
+    if (r.react && r.chat) {
+      bot.state = 'ok';
+      setBotSt(i, 'ok', null);
+      await deliverChat(r.chat, bot);
+      schedule(i, r.mood === 'hype' ? rand(6000, 10000) : rand(9000, 16000));
+    } else {
+      S.stats.s++;
+      updStats();
+      bot.state = 'idle';
+      setBotSt(i, 'idle', null);
+      schedule(i, rand(6000, 14000));
+    }
+  } else {
+    schedule(i, 6000);
+  }
+}
+
+function schedule(i, ms) {
+  if (!S.running) return;
+  const bot = S.bots[i];
+  bot.nextAt = Date.now() + ms;
+  bot.state  = 'wait';
+  setBotSt(i, 'wait', Math.ceil(ms / 1000));
+
+  // 카운트다운
+  const tick = setInterval(() => {
+    if (!S.running) { clearInterval(tick); return; }
+    const rem = Math.max(0, Math.ceil((bot.nextAt - Date.now()) / 1000));
+    setBotSt(i, rem > 0 ? 'wait' : 'think', rem);
+    if (rem <= 0) clearInterval(tick);
+  }, 1000);
+
+  S.timers[i] = setTimeout(() => { clearInterval(tick); botLoop(i); }, ms);
+}
+
+// ═══════════════════════════════════════════
+//  채팅 전송
+// ═══════════════════════════════════════════
+async function deliverChat(msg, bot) {
+  if (!msg) return;
+  bot.lastChat = msg;
+  S.recentChats.push({ name: bot.name, msg });
+  if (S.recentChats.length > 14) S.recentChats.shift();
+
+  addMsg(bot.name, msg, bot.color, [{ cls: 'k-bot', label: '⚡' }]);
+
+  if (g('swYT').checked && S.loggedIn && S.liveChatId) {
+    try {
+      const r = await fetch('/api/send-chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: msg, liveChatId: S.liveChatId, accessToken: S.token }),
+      }).then(r => r.json());
+      if (r.success) S.stats.c++;
+      else toast(`[${bot.name}] 전송 실패: ` + r.error, 'err');
+    } catch(e) {
+      toast('전송 오류: ' + e.message, 'err');
+    }
+  } else {
+    S.stats.c++;
+  }
+  updStats();
+}
+
+// ═══════════════════════════════════════════
+//  YouTube 채팅 폴링
+// ═══════════════════════════════════════════
+async function pollYTChat() {
+  if (!S.loggedIn || !S.liveChatId || !g('swRead').checked) return;
+  try {
+    let url = `/api/youtube?action=read-chat&liveChatId=${encodeURIComponent(S.liveChatId)}`;
+    if (S.ytNextPage) url += `&pageToken=${encodeURIComponent(S.ytNextPage)}`;
+    const r = await fetch(url, { headers: { 'Authorization': 'Bearer ' + S.token } }).then(r => r.json());
+    if (r.nextPageToken) S.ytNextPage = r.nextPageToken;
+    (r.messages || []).forEach(m => {
+      if (S.seenIds.has(m.id)) return;
+      S.seenIds.add(m.id);
+      if (S.seenIds.size > 100) {
+        const first = S.seenIds.values().next().value;
+        S.seenIds.delete(first);
+      }
+      S.recentChats.push({ name: m.author, msg: m.msg });
+      if (S.recentChats.length > 14) S.recentChats.shift();
+      addMsg(m.author, m.msg, '#666', [{ cls: 'k-yt', label: 'YT' }]);
+    });
+  } catch {}
+}
+
+// ═══════════════════════════════════════════
+//  봇 시작 / 정지
+// ═══════════════════════════════════════════
+async function startBot() {
+  if (!g('groqKey').value.trim()) { toast('설정 탭에서 Groq API Key를 입력하세요', 'err'); return; }
+  if (!S.stream) { toast('화면 선택 버튼을 먼저 눌러주세요', 'err'); return; }
+
+  S.liveChatId = g('liveChatId').value.trim();
+  const cfgs = getBotCfgs();
+  S.bots  = cfgs.map(c => ({ ...c, state: 'idle', nextAt: 0, lastChat: '' }));
+  S.running = true;
+  S.stats   = { c:0, a:0, s:0, start: Date.now() };
+  S.recentChats = [];
+  S.seenIds     = new Set();
+  S.ytNextPage  = '';
+
+  g('startBtn').disabled = true;
+  g('stopBtn').disabled  = false;
+  g('pillLive').classList.add('show');
+  g('gbadge').style.display = 'block';
+
+  addSys('⚡ AI 시청자 4명 시작 (v5 · Groq)');
+  S.upTimer   = setInterval(updStats, 30000);
+  S.pollTimer = setInterval(pollYTChat, 5000);
+
+  renderBotStatus();
+
+  // 각 봇 엇갈려 시작 (동시 API 호출 방지)
+  S.bots.forEach((_, i) => schedule(i, i * 1500 + rand(0, 2000)));
+}
+
+function stopBot() {
+  S.running = false;
+  S.timers.forEach(t => clearTimeout(t));
+  S.timers = [];
+  clearInterval(S.upTimer);
+  clearInterval(S.pollTimer);
+
+  g('startBtn').disabled = false;
+  g('stopBtn').disabled  = true;
+  g('pillLive').classList.remove('show');
+  g('gbadge').style.display = 'none';
+  g('tfill').style.width = '0%';
+
+  addSys('■ 봇 정지');
+  renderBotStatus();
+}
+
+// ═══════════════════════════════════════════
+//  수동 채팅
+// ═══════════════════════════════════════════
+async function sendManual() {
+  const inp = g('manIn'), txt = inp.value.trim();
+  if (!txt) return;
+
+  S.recentChats.push({ name: '시청자', msg: txt });
+  if (S.recentChats.length > 14) S.recentChats.shift();
+
+  addMsg('나', txt, '#888', [{ cls: 'k-man', label: 'MANUAL' }]);
+
+  if (g('swYT').checked && S.loggedIn && S.liveChatId) {
+    fetch('/api/send-chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: txt, liveChatId: S.liveChatId, accessToken: S.token }),
+    }).catch(() => {});
+  }
+  inp.value = '';
+}
+
+// ═══════════════════════════════════════════
+//  UI 유틸
+// ═══════════════════════════════════════════
+function g(id) { return document.getElementById(id); }
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function rand(a, b) { return Math.floor(Math.random() * (b - a)) + a; }
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function animTimer() {
+  const f = g('tfill');
+  f.style.transition = 'none'; f.style.width = '0%';
+  requestAnimationFrame(() => { f.style.transition = 'width 6s linear'; f.style.width = '100%'; });
+}
+
+function addMsg(name, text, color, tags = []) {
+  const log = g('log'), now = new Date().toTimeString().slice(0, 5);
+  const th = tags.map(t => `<span class="mk ${t.cls}">${t.label}</span>`).join('');
+  const d = document.createElement('div');
+  d.className = 'msg';
+  d.innerHTML = `
+    <div class="av" style="background:${color}22;color:${color}">${esc(name)[0].toUpperCase()}</div>
+    <div class="mb">
+      <div class="mh">
+        <span class="mn" style="color:${color}">${esc(name)}</span>
+        <span class="mt">${now}</span>
+        ${th}
+      </div>
+      <div class="mtx">${esc(text)}</div>
+    </div>`;
+  log.appendChild(d);
+  log.scrollTop = log.scrollHeight;
+}
+
+function addSys(t) {
+  const log = g('log'), d = document.createElement('div');
+  d.className = 'sysd';
+  d.innerHTML = `<div class="syl"></div><div class="syt">${esc(t)}</div><div class="syl"></div>`;
+  log.appendChild(d);
+  log.scrollTop = log.scrollHeight;
+}
+
+function updStats() {
+  g('stC').textContent = S.stats.c;
+  g('stA').textContent = S.stats.a;
+  g('stS').textContent = S.stats.s;
+  if (S.stats.start) g('stU').textContent = Math.floor((Date.now() - S.stats.start) / 60000) + 'm';
+}
+
+function toast(msg, type = 'info') {
+  const w = g('tw'), el = document.createElement('div');
+  el.className = `toast t-${type}`;
+  el.textContent = msg;
+  w.appendChild(el);
+  setTimeout(() => {
+    el.style.opacity = '0';
+    el.style.transition = 'opacity .3s';
+    setTimeout(() => el.remove(), 350);
+  }, 4000);
+}
+</script>
+</body>
+</html>
