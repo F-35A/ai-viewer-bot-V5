@@ -513,7 +513,9 @@ function getCfg() {
 }
 
 function saveCfg() {
+  const existing = getCfg();
   const d = {
+    ...existing,                              // refreshToken 등 기존값 보존
     clientId:     g('clientId').value.trim(),
     clientSecret: g('clientSecret').value.trim(),
     videoId:      g('videoId').value.trim(),
@@ -524,8 +526,7 @@ function saveCfg() {
     swRead:       g('swRead').checked,
     bots:         getBotCfgs(),
   };
-  const existing = getCfg();
-  localStorage.setItem('aibotcfg', JSON.stringify({ ...existing, ...d }));
+  localStorage.setItem('aibotcfg', JSON.stringify(d));
   toast('✅ 설정 저장됨', 'ok');
 }
 
@@ -571,22 +572,30 @@ async function autoRefresh(c) {
     if (r.success) {
       S.token = r.accessToken;
       setLoginOk();
+      toast('✅ 자동 로그인됨', 'ok');
       // 55분마다 자동 갱신
       setInterval(async () => {
-        const cfg = getCfg();
-        const res = await fetch('/api/refresh', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            refreshToken: cfg.refreshToken,
-            clientId:     cfg.clientId,
-            clientSecret: cfg.clientSecret,
-          }),
-        }).then(r => r.json());
-        if (res.success) S.token = res.accessToken;
+        try {
+          const cfg = getCfg();
+          const res = await fetch('/api/refresh', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              refreshToken: cfg.refreshToken,
+              clientId:     cfg.clientId,
+              clientSecret: cfg.clientSecret,
+            }),
+          }).then(r => r.json());
+          if (res.success) S.token = res.accessToken;
+          else { setLoginFail('토큰 갱신 실패 — 재로그인 필요'); toast('토큰 만료 — 재로그인 해주세요', 'err'); }
+        } catch {}
       }, 55 * 60 * 1000);
+    } else {
+      setLoginFail('자동 로그인 실패 — 재로그인 필요');
     }
-  } catch {}
+  } catch(e) {
+    setLoginFail('자동 로그인 오류: ' + e.message);
+  }
 }
 
 // ═══════════════════════════════════════════
@@ -700,10 +709,23 @@ async function captureFrame() {
   const track = S.stream.getVideoTracks()[0];
   if (track.readyState === 'ended') return null;
   try {
-    const bmp = await new ImageCapture(track).grabFrame();
     const cv = document.createElement('canvas');
     cv.width = 1280; cv.height = 720;
-    cv.getContext('2d').drawImage(bmp, 0, 0, 1280, 720);
+    const ctx = cv.getContext('2d');
+
+    // ImageCapture API 지원 여부 체크 (Chrome/Edge 지원, Firefox 미지원)
+    if (typeof ImageCapture !== 'undefined') {
+      const bmp = await new ImageCapture(track).grabFrame();
+      ctx.drawImage(bmp, 0, 0, 1280, 720);
+    } else {
+      // Firefox 폴백: video 엘리먼트 경유
+      const video = document.createElement('video');
+      video.srcObject = new MediaStream([track]);
+      await new Promise(res => { video.onloadedmetadata = res; video.play(); });
+      ctx.drawImage(video, 0, 0, 1280, 720);
+      video.pause(); video.srcObject = null;
+    }
+
     const url = cv.toDataURL('image/jpeg', 0.65);
     g('prevImg').src = url;
     g('prevImg').style.display = 'block';
@@ -777,7 +799,9 @@ ${myLast}
     }
 
     const raw = data.choices?.[0]?.message?.content || '{}';
-    return JSON.parse(raw);
+    // JSON 파싱 — 코드블록 래핑 대응
+    const cleaned = raw.replace(/```json|```/g, '').trim();
+    return JSON.parse(cleaned);
   } catch(e) {
     console.warn(`[${bot.name}] 분석 오류:`, e.message);
     return null;
@@ -910,6 +934,7 @@ async function startBot() {
   S.liveChatId = g('liveChatId').value.trim();
   const cfgs = getBotCfgs();
   S.bots  = cfgs.map(c => ({ ...c, state: 'idle', nextAt: 0, lastChat: '' }));
+  S.timers = new Array(4).fill(null);
   S.running = true;
   S.stats   = { c:0, a:0, s:0, start: Date.now() };
   S.recentChats = [];
@@ -933,10 +958,12 @@ async function startBot() {
 
 function stopBot() {
   S.running = false;
-  S.timers.forEach(t => clearTimeout(t));
-  S.timers = [];
+  S.timers.forEach(t => { clearTimeout(t); });
+  S.timers = new Array(4).fill(null);
   clearInterval(S.upTimer);
   clearInterval(S.pollTimer);
+  S.upTimer = null;
+  S.pollTimer = null;
 
   g('startBtn').disabled = false;
   g('stopBtn').disabled  = true;
