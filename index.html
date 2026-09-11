@@ -1169,7 +1169,7 @@ function startSTT() {
     // 최근 3개 발언만 유지
     const lines = S.streamerText ? S.streamerText.split('\n') : [];
     lines.push(text);
-    if (lines.length > 3) lines.shift();
+    if (lines.length > 9) lines.shift();
     S.streamerText = lines.join('\n');
     g('sttStatus').textContent = '🎙️ "' + text.slice(0, 30) + (text.length > 30 ? '...' : '') + '"';
   };
