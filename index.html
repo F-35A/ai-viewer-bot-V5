@@ -306,6 +306,18 @@ nav{height:46px;display:flex;align-items:center;padding:0 16px;gap:0;background:
       <button class="btn btn-o fw" style="font-size:11px;padding:7px" onclick="pickSource()">🖥️ 화면 선택</button>
     </div>
 
+    <div style="border-top:1px solid var(--bd);padding-top:14px">
+      <div class="sh">🎙️ 스트리머 음성 (STT)</div>
+      <div class="f" style="margin-bottom:8px">
+        <select id="micSel" style="font-size:11px"><option value="">마이크 선택...</option></select>
+      </div>
+      <div class="btn-row" style="margin-top:0">
+        <button class="btn btn-o fw" style="font-size:11px;padding:7px" onclick="loadMics()">🔄 마이크 목록</button>
+        <button class="btn btn-o fw" style="font-size:11px;padding:7px" id="sttBtn" onclick="toggleSTT()">🎙️ STT 시작</button>
+      </div>
+      <div id="sttStatus" style="font-size:10px;color:var(--dim);margin-top:6px;font-family:var(--mono)">비활성</div>
+    </div>
+
     <div style="border-top:1px solid var(--bd);padding-top:14px;margin-top:auto;display:flex;flex-direction:column;gap:8px">
       <button class="ctrl ctrl-s" id="startBtn" onclick="startBot()">▶ 봇 시작</button>
       <button class="ctrl ctrl-x" id="stopBtn" onclick="stopBot()" disabled>■ 봇 정지</button>
@@ -390,6 +402,7 @@ const S = {
   timers:  [],
   upTimer: null,
   pollTimer: null,
+  captureTimer: null,   // 공유 캡처 루프
   stats:   { c:0, a:0, s:0, start:0 },
   token:   '',
   loggedIn: false,
@@ -397,6 +410,15 @@ const S = {
   recentChats: [],
   seenIds: new Set(),
   ytNextPage: '',
+  // 공유 분석 결과 (캡처 루프가 채우고 봇들이 읽음)
+  sharedScene: '',
+  sharedMood:  'calm',
+  sharedDesc:  '',      // 화면+음성 합친 설명
+  lastImg:     null,
+  // STT
+  sttActive:   false,
+  sttRecog:    null,
+  streamerText: '',     // 최근 스트리머 발언 (누적)
 };
 
 // ═══════════════════════════════════════════
@@ -745,7 +767,62 @@ async function captureFrame() {
 }
 
 // ═══════════════════════════════════════════
-//  Groq Vision 분석
+//  봇 채팅 생성 (텍스트만, Vision 없음)
+// ═══════════════════════════════════════════
+async function genChatForBot(bot) {
+  const key = g('groqKey').value.trim();
+  if (!key || !S.sharedDesc) return null;
+
+  const personaTxt  = bot.persona === 'custom' ? bot.customP : PERSONA[bot.persona] || '';
+  const chatHistory = S.recentChats.slice(-8).map(c => `${c.name}: ${c.msg}`).join('
+') || '(없음)';
+  const myLast      = bot.lastChat || '(없음)';
+
+  const system = `너는 "${bot.name}"라는 유튜브 라이브 시청자야.
+
+${personaTxt}
+
+== 현재 방송 상황 ==
+${S.sharedDesc}
+
+== 최근 채팅 흐름 ==
+${chatHistory}
+
+== 내가 직전에 한 말 ==
+${myLast}
+
+== 반응 규칙 ==
+1. 현재 방송 상황을 바탕으로 구체적인 걸 짚어서 말해.
+2. 내 직전 발언(${myLast})과 같거나 비슷한 말 절대 반복 금지.
+3. 다른 시청자가 이미 비슷한 말 했으면 다른 포인트를 짚어.
+4. 상황이 별로면 react=false로 스킵.
+5. "재밌네" "시작됐네" 같은 generic 반응 절대 금지.
+6. 내 말투 그대로, 짧고 자연스럽게.
+
+== 출력 (JSON만) ==
+{"react":true/false,"chat":"내 말투로 15~35자 (react=false면 빈문자열)"}`;
+
+  try {
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+      body: JSON.stringify({
+        model: 'qwen/qwen3.6-27b',  // 텍스트 전용 (Vision 불필요)
+        messages: [{ role: 'system', content: system }, { role: 'user', content: '반응해.' }],
+        max_tokens: 100,
+        temperature: 0.92,
+        response_format: { type: 'json_object' },
+      }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const raw = data.choices?.[0]?.message?.content || '{}';
+    return JSON.parse(raw.replace(/```json|```/g, '').trim());
+  } catch { return null; }
+}
+
+// ═══════════════════════════════════════════
+//  Groq Vision 분석 (공유 캡처 루프용)
 // ═══════════════════════════════════════════
 async function analyzeForBot(imgData, bot) {
   const key   = g('groqKey').value.trim();
@@ -819,6 +896,79 @@ ${myLast}
 }
 
 // ═══════════════════════════════════════════
+//  공유 캡처 루프 (6초마다 화면+음성 분석 1번)
+// ═══════════════════════════════════════════
+async function runSharedCapture() {
+  if (!S.running) return;
+
+  const img = await captureFrame();
+  if (img) {
+    S.lastImg = img;
+    animTimer();
+
+    const key   = g('groqKey').value.trim();
+    const model = g('groqModel').value;
+    if (key) {
+      const streamerCtx = S.streamerText
+        ? `
+
+== 스트리머 최근 발언 (STT) ==
+${S.streamerText}`
+        : '';
+
+      const sysPrompt = `너는 유튜브 라이브 방송 화면 분석기야.
+화면 이미지${S.streamerText ? '와 스트리머 발언' : ''}을 보고 현재 상황을 분석해.
+
+출력 형식 (JSON만, 다른 텍스트 없음):
+{"scene":"현재 상황 20자 이내","mood":"hype|calm|tense","desc":"화면과 상황을 200자 이내로 자세히 설명. 게임이면 전투상황/위치/체력/무기 등 포함"}`;
+
+      try {
+        const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+          body: JSON.stringify({
+            model,
+            messages: [
+              { role: 'system', content: sysPrompt },
+              { role: 'user', content: [
+                { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${img.split(',')[1]}` } },
+                { type: 'text', text: '화면 분석해줘.' + streamerCtx },
+              ]},
+            ],
+            max_tokens: 300,
+            temperature: 0.3,
+            response_format: { type: 'json_object' },
+          }),
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          const raw = data.choices?.[0]?.message?.content || '{}';
+          const r = JSON.parse(raw.replace(/```json|```/g, '').trim());
+          if (r.scene) {
+            S.sharedScene = r.scene;
+            S.sharedMood  = r.mood || 'calm';
+            S.sharedDesc  = r.desc || r.scene;
+            // 스트리머 발언 desc에 포함됐으면 초기화
+            if (S.streamerText) S.streamerText = '';
+
+            // UI 업데이트
+            g('sceneTx').textContent = r.scene;
+            const chip = g('moodChip');
+            chip.className = 'mood ' + (r.mood==='hype'?'m-hype':r.mood==='tense'?'m-tense':'m-calm');
+            chip.textContent = r.mood==='hype'?'🔥 하입':r.mood==='tense'?'⚡ 긴장':'😎 안정';
+          }
+        }
+      } catch {}
+      S.stats.a++;
+      updStats();
+    }
+  }
+
+  S.captureTimer = setTimeout(runSharedCapture, 6000);
+}
+
+// ═══════════════════════════════════════════
 //  봇 루프 (각자 독립)
 // ═══════════════════════════════════════════
 async function botLoop(i) {
@@ -832,34 +982,24 @@ async function botLoop(i) {
   setBotSt(i, 'think', null);
   bot.state = 'think';
 
-  const img = await captureFrame();
-  if (!img) { schedule(i, 6000); return; }
+  // 공유 분석 결과가 없으면 대기
+  if (!S.sharedDesc) { schedule(i, 3000); return; }
 
-  animTimer();
-  S.stats.a++;
-  const r = await analyzeForBot(img, bot);
+  // 공유된 화면 분석 결과로 채팅 생성 (Vision 없이 텍스트만)
+  const r = await genChatForBot(bot);
   updStats();
 
-  if (r) {
-    g('sceneTx').textContent = r.scene || '--';
-    const chip = g('moodChip');
-    chip.className = 'mood ' + (r.mood==='hype' ? 'm-hype' : r.mood==='tense' ? 'm-tense' : 'm-calm');
-    chip.textContent = r.mood==='hype' ? '🔥 하입' : r.mood==='tense' ? '⚡ 긴장' : '😎 안정';
-
-    if (r.react && r.chat) {
-      bot.state = 'ok';
-      setBotSt(i, 'ok', null);
-      await deliverChat(r.chat, bot);
-      schedule(i, r.mood === 'hype' ? rand(6000, 10000) : rand(9000, 16000));
-    } else {
-      S.stats.s++;
-      updStats();
-      bot.state = 'idle';
-      setBotSt(i, 'idle', null);
-      schedule(i, rand(6000, 14000));
-    }
+  if (r && r.react && r.chat) {
+    bot.state = 'ok';
+    setBotSt(i, 'ok', null);
+    await deliverChat(r.chat, bot);
+    schedule(i, S.sharedMood === 'hype' ? rand(6000, 10000) : rand(9000, 16000));
   } else {
-    schedule(i, 6000);
+    S.stats.s++;
+    updStats();
+    bot.state = 'idle';
+    setBotSt(i, 'idle', null);
+    schedule(i, rand(6000, 14000));
   }
 }
 
@@ -962,7 +1102,10 @@ async function startBot() {
 
   renderBotStatus();
 
-  // 각 봇 엇갈려 시작 (동시 API 호출 방지)
+  // 공유 캡처 루프 시작 (6초마다 1번 분석 → 공유 상태 업데이트)
+  runSharedCapture();
+
+  // 각 봇 엇갈려 시작 (공유 분석 결과 읽어서 채팅만 생성)
   S.bots.forEach((_, i) => schedule(i, i * 1500 + rand(0, 2000)));
 }
 
@@ -972,8 +1115,10 @@ function stopBot() {
   S.timers = new Array(4).fill(null);
   clearInterval(S.upTimer);
   clearInterval(S.pollTimer);
+  clearTimeout(S.captureTimer);
   S.upTimer = null;
   S.pollTimer = null;
+  S.captureTimer = null;
 
   g('startBtn').disabled = false;
   g('stopBtn').disabled  = true;
@@ -983,6 +1128,80 @@ function stopBot() {
 
   addSys('■ 봇 정지');
   renderBotStatus();
+}
+
+// ═══════════════════════════════════════════
+//  STT (Web Speech API)
+// ═══════════════════════════════════════════
+async function loadMics() {
+  try {
+    await navigator.mediaDevices.getUserMedia({ audio: true }); // 권한 요청
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const mics = devices.filter(d => d.kind === 'audioinput');
+    const sel = g('micSel');
+    sel.innerHTML = '<option value="">마이크 선택...</option>';
+    mics.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m.deviceId;
+      opt.textContent = m.label || '마이크 ' + m.deviceId.slice(0, 6);
+      sel.appendChild(opt);
+    });
+    toast('마이크 목록 로드됨', 'ok');
+  } catch(e) {
+    toast('마이크 접근 오류: ' + e.message, 'err');
+  }
+}
+
+function toggleSTT() {
+  if (S.sttActive) stopSTT();
+  else startSTT();
+}
+
+function startSTT() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { toast('이 브라우저는 STT 미지원 (Chrome 필요)', 'err'); return; }
+
+  S.sttRecog = new SR();
+  S.sttRecog.lang = 'ko-KR';
+  S.sttRecog.continuous = true;
+  S.sttRecog.interimResults = false;
+
+  S.sttRecog.onresult = (e) => {
+    const text = e.results[e.results.length - 1][0].transcript.trim();
+    if (!text) return;
+    // 최근 3개 발언만 유지
+    const lines = S.streamerText ? S.streamerText.split('
+') : [];
+    lines.push(text);
+    if (lines.length > 3) lines.shift();
+    S.streamerText = lines.join('
+');
+    g('sttStatus').textContent = '🎙️ "' + text.slice(0, 30) + (text.length > 30 ? '...' : '') + '"';
+  };
+
+  S.sttRecog.onerror = (e) => {
+    if (e.error !== 'no-speech') toast('STT 오류: ' + e.error, 'err');
+  };
+
+  S.sttRecog.onend = () => {
+    // 자동 재시작 (continuous 모드에서도 끊길 수 있음)
+    if (S.sttActive) S.sttRecog.start();
+  };
+
+  S.sttRecog.start();
+  S.sttActive = true;
+  g('sttBtn').textContent = '⏹ STT 정지';
+  g('sttBtn').style.color = 'var(--red)';
+  g('sttStatus').textContent = '🎙️ 음성 인식 중...';
+  toast('STT 시작됨', 'ok');
+}
+
+function stopSTT() {
+  if (S.sttRecog) { S.sttRecog.onend = null; S.sttRecog.stop(); S.sttRecog = null; }
+  S.sttActive = false;
+  g('sttBtn').textContent = '🎙️ STT 시작';
+  g('sttBtn').style.color = '';
+  g('sttStatus').textContent = '비활성';
 }
 
 // ═══════════════════════════════════════════
