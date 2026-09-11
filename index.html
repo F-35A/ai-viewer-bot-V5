@@ -806,7 +806,7 @@ ${myLast}
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
       body: JSON.stringify({
-        model: 'qwen/qwen3.6-27b',  // 텍스트 전용 (Vision 불필요)
+        model: g('groqModel').value,  // 설정에서 선택한 모델 사용
         messages: [{ role: 'system', content: system }, { role: 'user', content: '반응해.' }],
         max_tokens: 100,
         temperature: 0.92,
