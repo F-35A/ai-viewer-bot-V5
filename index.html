@@ -896,124 +896,123 @@ ${myLast}
 }
 
 // ═══════════════════════════════════════════
-//  공유 캡처 루프 (6초마다 화면+음성 분석 1번)
+//  공유 캡처 루프 — 지속 반복, 비동기 fire-and-forget
 // ═══════════════════════════════════════════
-async function runSharedCapture() {
+function runSharedCapture() {
   if (!S.running) return;
-
-  const img = await captureFrame();
-  if (img) {
-    S.lastImg = img;
-    animTimer();
-
-    const key   = g('groqKey').value.trim();
-    const model = g('groqModel').value;
-    if (key) {
-      const streamerCtx = S.streamerText
-        ? `
-
-== 스트리머 최근 발언 (STT) ==
-${S.streamerText}`
-        : '';
-
-      const sysPrompt = `너는 유튜브 라이브 방송 화면 분석기야.
-화면 이미지${S.streamerText ? '와 스트리머 발언' : ''}을 보고 현재 상황을 분석해.
-
-출력 형식 (JSON만, 다른 텍스트 없음):
-{"scene":"현재 상황 20자 이내","mood":"hype|calm|tense","desc":"화면과 상황을 200자 이내로 자세히 설명. 게임이면 전투상황/위치/체력/무기 등 포함"}`;
-
-      try {
-        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            systemInstruction: { parts: [{ text: sysPrompt }] },
-            contents: [{ role: 'user', parts: [
-              { inlineData: { mimeType: 'image/jpeg', data: img.split(',')[1] } },
-              { text: '화면 분석해줘.' + streamerCtx },
-            ]}],
-            generationConfig: { temperature: 0.3, maxOutputTokens: 300, responseMimeType: 'application/json' },
-          }),
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-          const raw = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-          const r = JSON.parse(raw.replace(/```json|```/g, '').trim());
-          if (r.scene) {
-            S.sharedScene = r.scene;
-            S.sharedMood  = r.mood || 'calm';
-            S.sharedDesc  = r.desc || r.scene;
-            // 스트리머 발언 desc에 포함됐으면 초기화
-            if (S.streamerText) S.streamerText = '';
-
-            // UI 업데이트
-            g('sceneTx').textContent = r.scene;
-            const chip = g('moodChip');
-            chip.className = 'mood ' + (r.mood==='hype'?'m-hype':r.mood==='tense'?'m-tense':'m-calm');
-            chip.textContent = r.mood==='hype'?'🔥 하입':r.mood==='tense'?'⚡ 긴장':'😎 안정';
-          }
-        }
-      } catch {}
-      S.stats.a++;
-      updStats();
-    }
-  }
-
+  // 15초마다 캡처 → 분석은 비동기로 (기다리지 않음)
+  doCapture();
   S.captureTimer = setTimeout(runSharedCapture, 15000);
 }
 
-// ═══════════════════════════════════════════
-//  봇 루프 (각자 독립)
-// ═══════════════════════════════════════════
-async function botLoop(i) {
+async function doCapture() {
   if (!S.running) return;
-  const bot = S.bots[i];
+  const img = await captureFrame();
+  if (!img) return;
 
-  // 랜덤 생각 유예 1~2.5초
-  await sleep(rand(800, 2500));
-  if (!S.running) return;
+  S.lastImg = img;
+  animTimer();
 
-  setBotSt(i, 'think', null);
-  bot.state = 'think';
+  const key   = g('groqKey').value.trim();
+  const model = g('groqModel').value;
+  if (!key) return;
 
-  // 공유 분석 결과가 없으면 대기
-  if (!S.sharedDesc) { schedule(i, 3000); return; }
+  // STT 버퍼 스냅샷 (분석 시점의 발언 캡처)
+  const sttSnapshot = S.streamerText;
+  const streamerCtx = sttSnapshot ? ('\n\n== 스트리머 최근 발언 ==\n' + sttSnapshot) : '';
 
-  // 공유된 화면 분석 결과로 채팅 생성 (Vision 없이 텍스트만)
-  const r = await genChatForBot(bot);
-  updStats();
+  const sysPrompt = `너는 유튜브 라이브 방송 화면 분석기야.
+화면${sttSnapshot ? '과 스트리머 발언' : ''}을 보고 현재 상황을 분석해.
+출력 형식 (JSON만):
+{"scene":"현재 상황 20자 이내","mood":"hype|calm|tense","desc":"화면 상황 상세 설명 200자 이내. 게임이면 전투상황/위치/체력/무기 포함. 스트리머 발언 있으면 맥락 포함"}`;
 
-  if (r && r.react && r.chat) {
-    bot.state = 'ok';
-    setBotSt(i, 'ok', null);
-    await deliverChat(r.chat, bot);
-    schedule(i, S.sharedMood === 'hype' ? rand(10000, 14000) : rand(12000, 18000));
-  } else {
-    S.stats.s++;
+  try {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: sysPrompt }] },
+          contents: [{ role: 'user', parts: [
+            { inlineData: { mimeType: 'image/jpeg', data: img.split(',')[1] } },
+            { text: '화면 분석해줘.' + streamerCtx },
+          ]}],
+          generationConfig: { temperature: 0.3, maxOutputTokens: 300, responseMimeType: 'application/json' },
+        }),
+      }
+    );
+
+    if (res.status === 429) { console.warn('[Capture] 429 - 다음 주기에 재시도'); return; }
+    if (!res.ok) { console.warn('[Capture] 오류:', res.status); return; }
+
+    const data = await res.json();
+    const raw  = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+    const r    = JSON.parse(raw.replace(/```json|```/g, '').trim());
+
+    if (r.scene) {
+      S.sharedScene = r.scene;
+      S.sharedMood  = r.mood || 'calm';
+      S.sharedDesc  = r.desc || r.scene;
+      // 분석에 포함된 STT 버퍼 초기화
+      if (sttSnapshot) S.streamerText = '';
+      // UI 업데이트
+      g('sceneTx').textContent = r.scene;
+      const chip = g('moodChip');
+      chip.className = 'mood ' + (r.mood==='hype'?'m-hype':r.mood==='tense'?'m-tense':'m-calm');
+      chip.textContent = r.mood==='hype'?'🔥 하입':r.mood==='tense'?'⚡ 긴장':'😎 안정';
+    }
+    S.stats.a++;
     updStats();
-    bot.state = 'idle';
-    setBotSt(i, 'idle', null);
-    schedule(i, rand(6000, 14000));
-  }
+  } catch(e) { console.warn('[Capture] 예외:', e.message); }
 }
 
-function schedule(i, ms) {
-  if (!S.running) return;
-  const bot = S.bots[i];
-  bot.nextAt = Date.now() + ms;
-  bot.state  = 'wait';
-  setBotSt(i, 'wait', Math.ceil(ms / 1000));
+// ═══════════════════════════════════════════
+//  봇 루프 — 완전 독립 지속 반복
+// ═══════════════════════════════════════════
+async function botLoop(i) {
+  while (S.running) {
+    const bot = S.bots[i];
 
-  // 카운트다운
-  const tick = setInterval(() => {
-    if (!S.running) { clearInterval(tick); return; }
-    const rem = Math.max(0, Math.ceil((bot.nextAt - Date.now()) / 1000));
-    setBotSt(i, rem > 0 ? 'wait' : 'think', rem);
-    if (rem <= 0) clearInterval(tick);
-  }, 1000);
+    // 공유 분석 결과 없으면 잠깐 대기 후 재시도
+    if (!S.sharedDesc) {
+      setBotSt(i, 'idle', null);
+      await sleep(3000);
+      continue;
+    }
 
-  S.timers[i] = setTimeout(() => { clearInterval(tick); botLoop(i); }, ms);
+    // 랜덤 생각 유예
+    await sleep(rand(800, 2000));
+    if (!S.running) break;
+
+    setBotSt(i, 'think', null);
+    bot.state = 'think';
+
+    const r = await genChatForBot(bot);
+    updStats();
+
+    if (r && r.react && r.chat) {
+      bot.state = 'ok';
+      setBotSt(i, 'ok', null);
+      await deliverChat(r.chat, bot);
+      // 반응 후 쿨다운
+      const cd = S.sharedMood === 'hype' ? rand(10000, 14000) : rand(12000, 18000);
+      bot.nextAt = Date.now() + cd;
+      setBotSt(i, 'wait', Math.ceil(cd / 1000));
+      await sleep(cd);
+    } else {
+      S.stats.s++;
+      updStats();
+      bot.state = 'idle';
+      // 스킵 후 쿨다운
+      const cd = rand(8000, 14000);
+      bot.nextAt = Date.now() + cd;
+      setBotSt(i, 'wait', Math.ceil(cd / 1000));
+      await sleep(cd);
+    }
+  }
+  // 루프 종료 시 상태 초기화
+  if (S.bots[i]) setBotSt(i, 'idle', null);
 }
 
 // ═══════════════════════════════════════════
@@ -1029,15 +1028,32 @@ async function deliverChat(msg, bot) {
 
   if (g('swYT').checked && S.loggedIn && S.liveChatId) {
     try {
-      const r = await fetch('/api/send-chat', {
+      const resp = await fetch('/api/send-chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: msg, liveChatId: S.liveChatId, accessToken: S.token }),
-      }).then(r => r.json());
-      if (r.success) S.stats.c++;
-      else toast(`[${bot.name}] 전송 실패: ` + r.error, 'err');
+      });
+      const r = await resp.json();
+      if (r.success) {
+        S.stats.c++;
+      } else if (r.error && r.error.includes('401')) {
+        // 토큰 만료 → 갱신 후 재전송
+        const cfg = getCfg();
+        if (cfg.refreshToken) {
+          await autoRefresh(cfg);
+          // 1회 재시도
+          const r2 = await fetch('/api/send-chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: msg, liveChatId: S.liveChatId, accessToken: S.token }),
+          }).then(r => r.json());
+          if (r2.success) S.stats.c++;
+        }
+      } else {
+        console.warn(`[${bot.name}] 전송 실패:`, r.error);
+      }
     } catch(e) {
-      toast('전송 오류: ' + e.message, 'err');
+      console.warn('[deliverChat] 예외:', e.message);
     }
   } else {
     S.stats.c++;
@@ -1050,30 +1066,42 @@ async function deliverChat(msg, bot) {
 // ═══════════════════════════════════════════
 async function pollYTChat() {
   if (!S.loggedIn || !S.liveChatId || !g('swRead').checked) return;
+  if (!S.token) { console.warn('[YT Poll] 토큰 없음'); return; }
+
   try {
     let url = `/api/youtube?action=read-chat&liveChatId=${encodeURIComponent(S.liveChatId)}`;
     if (S.ytNextPage) url += `&pageToken=${encodeURIComponent(S.ytNextPage)}`;
-    const r = await fetch(url, { headers: { 'Authorization': 'Bearer ' + S.token } }).then(r => r.json());
+
+    const resp = await fetch(url, { headers: { 'Authorization': 'Bearer ' + S.token } });
+    const r = await resp.json();
+
+    // 401 = 토큰 만료 → 자동 갱신 시도
+    if (resp.status === 401 || (r.error && r.error.includes('401'))) {
+      console.warn('[YT Poll] 토큰 만료 → 갱신 시도');
+      const cfg = getCfg();
+      if (cfg.refreshToken) await autoRefresh(cfg);
+      return;
+    }
+
+    if (!r.success) { console.warn('[YT Poll] 오류:', r.error); return; }
+
     if (r.nextPageToken) S.ytNextPage = r.nextPageToken;
     (r.messages || []).forEach(m => {
       if (S.seenIds.has(m.id)) return;
       S.seenIds.add(m.id);
-      if (S.seenIds.size > 100) {
-        const first = S.seenIds.values().next().value;
-        S.seenIds.delete(first);
-      }
+      if (S.seenIds.size > 100) S.seenIds.delete(S.seenIds.values().next().value);
       S.recentChats.push({ name: m.author, msg: m.msg });
       if (S.recentChats.length > 14) S.recentChats.shift();
       addMsg(m.author, m.msg, '#666', [{ cls: 'k-yt', label: 'YT' }]);
     });
-  } catch {}
+  } catch(e) { console.warn('[YT Poll] 예외:', e.message); }
 }
 
 // ═══════════════════════════════════════════
 //  봇 시작 / 정지
 // ═══════════════════════════════════════════
 async function startBot() {
-  if (!g('groqKey').value.trim()) { toast('설정 탭에서 Groq API Key를 입력하세요', 'err'); return; }
+  if (!g('groqKey').value.trim()) { toast('설정 탭에서 Gemini API Key를 입력하세요', 'err'); return; }
   if (!S.stream) { toast('화면 선택 버튼을 먼저 눌러주세요', 'err'); return; }
 
   S.liveChatId = g('liveChatId').value.trim();
@@ -1091,22 +1119,24 @@ async function startBot() {
   g('pillLive').classList.add('show');
   g('gbadge').style.display = 'block';
 
-  addSys('⚡ AI 시청자 4명 시작 (v5 · Groq)');
+  addSys('⚡ AI 시청자 ' + S.bots.length + '명 시작 (v5 · Gemini)');
   S.upTimer   = setInterval(updStats, 30000);
   S.pollTimer = setInterval(pollYTChat, 5000);
 
   renderBotStatus();
 
-  // 공유 캡처 루프 시작 (6초마다 1번 분석 → 공유 상태 업데이트)
+  // 공유 캡처 루프 시작 (지속 반복, fire-and-forget)
   runSharedCapture();
 
-  // 각 봇 엇갈려 시작 (공유 분석 결과 읽어서 채팅만 생성)
-  S.bots.forEach((_, i) => schedule(i, i * 1500 + rand(0, 2000)));
+  // 봇 루프 시작 (각자 완전 독립, while 루프)
+  S.bots.forEach((_, i) => {
+    setTimeout(() => botLoop(i), i * 1500 + rand(0, 1000));
+  });
 }
 
 function stopBot() {
   S.running = false;
-  S.timers.forEach(t => { clearTimeout(t); });
+  S.timers.forEach(t => { if(t) clearTimeout(t); });
   S.timers = new Array(2).fill(null);
   clearInterval(S.upTimer);
   clearInterval(S.pollTimer);
