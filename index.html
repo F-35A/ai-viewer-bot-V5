@@ -774,8 +774,7 @@ async function genChatForBot(bot) {
   if (!key || !S.sharedDesc) return null;
 
   const personaTxt  = bot.persona === 'custom' ? bot.customP : PERSONA[bot.persona] || '';
-  const chatHistory = S.recentChats.slice(-8).map(c => `${c.name}: ${c.msg}`).join('
-') || '(없음)';
+  const chatHistory = S.recentChats.slice(-8).map(c => c.name + ': ' + c.msg).join('\n') || '(없음)';
   const myLast      = bot.lastChat || '(없음)';
 
   const system = `너는 "${bot.name}"라는 유튜브 라이브 시청자야.
@@ -1170,12 +1169,10 @@ function startSTT() {
     const text = e.results[e.results.length - 1][0].transcript.trim();
     if (!text) return;
     // 최근 3개 발언만 유지
-    const lines = S.streamerText ? S.streamerText.split('
-') : [];
+    const lines = S.streamerText ? S.streamerText.split('\n') : [];
     lines.push(text);
     if (lines.length > 3) lines.shift();
-    S.streamerText = lines.join('
-');
+    S.streamerText = lines.join('\n');
     g('sttStatus').textContent = '🎙️ "' + text.slice(0, 30) + (text.length > 30 ? '...' : '') + '"';
   };
 
