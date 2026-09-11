@@ -1,6 +1,10 @@
 {
   "rewrites": [
-    { "source": "/api/:path*", "destination": "/api/:path*" },
-    { "source": "/(.*)",       "destination": "/index.html" }
+    { "source": "/api/oauth-start",    "destination": "/api/oauth-start.js" },
+    { "source": "/api/oauth-callback", "destination": "/api/oauth-callback.js" },
+    { "source": "/api/refresh",        "destination": "/api/refresh.js" },
+    { "source": "/api/send-chat",      "destination": "/api/send-chat.js" },
+    { "source": "/api/youtube",        "destination": "/api/youtube.js" },
+    { "source": "/(.*)",               "destination": "/index.html" }
   ]
 }
