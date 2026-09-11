@@ -813,6 +813,11 @@ ${myLast}
         response_format: { type: 'json_object' },
       }),
     });
+    if (res.status === 429) {
+      // 속도 제한 → 봇 더 오래 대기
+      await sleep(rand(5000, 10000));
+      return null;
+    }
     if (!res.ok) return null;
     const data = await res.json();
     const raw = data.choices?.[0]?.message?.content || '{}';
@@ -964,7 +969,7 @@ ${S.streamerText}`
     }
   }
 
-  S.captureTimer = setTimeout(runSharedCapture, 6000);
+  S.captureTimer = setTimeout(runSharedCapture, 12000);
 }
 
 // ═══════════════════════════════════════════
@@ -992,7 +997,7 @@ async function botLoop(i) {
     bot.state = 'ok';
     setBotSt(i, 'ok', null);
     await deliverChat(r.chat, bot);
-    schedule(i, S.sharedMood === 'hype' ? rand(6000, 10000) : rand(9000, 16000));
+    schedule(i, S.sharedMood === 'hype' ? rand(12000, 18000) : rand(15000, 25000));
   } else {
     S.stats.s++;
     updStats();
