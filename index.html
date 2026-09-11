@@ -359,8 +359,6 @@ nav{height:46px;display:flex;align-items:center;padding:0 16px;gap:0;background:
 const BOTS_DEFAULT = [
   { name:'하입킹',    color:'#ff4fd8', persona:'hype'  },
   { name:'쿨가이',    color:'#00e5ff', persona:'chill' },
-  { name:'개그맨',    color:'#ffaa00', persona:'funny' },
-  { name:'프로게이머', color:'#7fff00', persona:'pro'   },
 ];
 
 const PERSONA = {
@@ -990,7 +988,7 @@ async function botLoop(i) {
     bot.state = 'ok';
     setBotSt(i, 'ok', null);
     await deliverChat(r.chat, bot);
-    schedule(i, S.sharedMood === 'hype' ? rand(18000, 24000) : rand(22000, 30000));
+    schedule(i, S.sharedMood === 'hype' ? rand(10000, 14000) : rand(12000, 18000));
   } else {
     S.stats.s++;
     updStats();
@@ -1081,7 +1079,7 @@ async function startBot() {
   S.liveChatId = g('liveChatId').value.trim();
   const cfgs = getBotCfgs();
   S.bots  = cfgs.map(c => ({ ...c, state: 'idle', nextAt: 0, lastChat: '' }));
-  S.timers = new Array(4).fill(null);
+  S.timers = new Array(2).fill(null);
   S.running = true;
   S.stats   = { c:0, a:0, s:0, start: Date.now() };
   S.recentChats = [];
@@ -1109,7 +1107,7 @@ async function startBot() {
 function stopBot() {
   S.running = false;
   S.timers.forEach(t => { clearTimeout(t); });
-  S.timers = new Array(4).fill(null);
+  S.timers = new Array(2).fill(null);
   clearInterval(S.upTimer);
   clearInterval(S.pollTimer);
   clearTimeout(S.captureTimer);
