@@ -962,7 +962,7 @@ ${S.streamerText}`
     }
   }
 
-  S.captureTimer = setTimeout(runSharedCapture, 10000);
+  S.captureTimer = setTimeout(runSharedCapture, 15000);
 }
 
 // ═══════════════════════════════════════════
@@ -990,7 +990,7 @@ async function botLoop(i) {
     bot.state = 'ok';
     setBotSt(i, 'ok', null);
     await deliverChat(r.chat, bot);
-    schedule(i, S.sharedMood === 'hype' ? rand(10000, 15000) : rand(13000, 20000));
+    schedule(i, S.sharedMood === 'hype' ? rand(18000, 24000) : rand(22000, 30000));
   } else {
     S.stats.s++;
     updStats();
